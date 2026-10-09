@@ -46,6 +46,8 @@
 
 import { DemoSource } from "./demo-source.js";
 import { LiveSource } from "./live-source.js";
+import { CanvasSource } from "./canvas-source.js";
+import { currentSchool, platformOf } from "../core/schools.js";
 
 /**
  * @param {object} settings
@@ -54,7 +56,9 @@ import { LiveSource } from "./live-source.js";
  * @returns {DeadlineSource}
  */
 export function createSource(settings, getCatalog, liveOpts) {
-  if (settings.mode === "live") return new LiveSource(settings, liveOpts);
+  if (settings.mode === "live") {
+    return platformOf(currentSchool(settings)) === "canvas" ? new CanvasSource(settings, liveOpts) : new LiveSource(settings, liveOpts);
+  }
   return new DemoSource(settings, getCatalog);
 }
 

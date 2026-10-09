@@ -10,8 +10,10 @@
   LIVE mode, on any matching page:
     background -> here  { type: "live:fetch", path }  runs a GET on this page's
       own origin, which carries the Learn session cookie, and returns
-      { status, loginRedirect, type, json }, plus the start of the body when
-      the request failed. Only /d2l/api/ paths are allowed.
+      { status, loginRedirect, type, json, link }, plus the start of the body
+      when the request failed. Only /d2l/api/ (Brightspace) and /api/v1/
+      (Canvas) paths are allowed. Canvas puts "while(1);" before JSON read with
+      a session, so that is stripped, and its Link header (paging) is passed on.
     here -> background  { type: "live:learn-page", login }  sent once per page
       load while in LIVE mode, so a panel stuck on "Sign in to Learn first"
       can try again after the student signs in.
@@ -23,7 +25,7 @@
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (!msg || msg.type !== "live:fetch") return false;
     const path = String(msg.path || "");
-    if (!path.startsWith("/d2l/api/") || path.includes("..")) {
+    if (!(path.startsWith("/d2l/api/") || path.startsWith("/api/v1/")) || path.includes("..")) {
       sendResponse({ status: 0, error: "path not allowed" });
       return false;
     }
@@ -31,10 +33,17 @@
       try {
         const res = await fetch(location.origin + path, { method: "GET", credentials: "same-origin", headers: { Accept: "application/json" }, signal: AbortSignal.timeout(20000) });
         const type = res.headers.get("content-type") || "";
-        const out = { status: res.status, redirected: res.redirected, loginRedirect: /\/d2l\/login/i.test(res.url || ""), type };
+        const offSite = (() => {
+          try {
+            return new URL(res.url).origin !== location.origin;
+          } catch {
+            return false;
+          }
+        })();
+        const out = { status: res.status, redirected: res.redirected, loginRedirect: /\/d2l\/login/i.test(res.url || "") || offSite, type, link: res.headers.get("link") };
         if (res.ok && type.includes("json")) {
           try {
-            out.json = await res.json();
+            out.json = JSON.parse((await res.text()).replace(/^\s*while\s*\(1\)\s*;/, ""));
           } catch (e) {
             out.parseError = String(e);
           }
@@ -58,7 +67,7 @@
     .get("settings")
     .then(({ settings }) => {
       if (!settings || settings.mode !== "live") return;
-      chrome.runtime.sendMessage({ type: "live:learn-page", login: /^\/d2l\/login/i.test(location.pathname) }).catch(() => {});
+      chrome.runtime.sendMessage({ type: "live:learn-page", login: /^\/(?:d2l\/)?login/i.test(location.pathname) }).catch(() => {});
     })
     .catch(() => {});
 

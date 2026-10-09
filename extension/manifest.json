@@ -72,6 +72,7 @@
     "https://westernu.brightspace.com/*",
     "https://courses.torontomu.ca/*",
     "https://courses.ryerson.ca/*",
+    "https://q.utoronto.ca/*",
     "https://app.crowdmark.com/*"
   ],
   "content_scripts": [

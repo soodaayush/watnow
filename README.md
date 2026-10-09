@@ -6,7 +6,7 @@
 
 **All your course deadlines in one side panel, updated when profs move dates, with reminders before things close.**
 
-A browser extension for students at Waterloo, Guelph, Laurier, McMaster, Queen's, Western and TMU, for Chrome and for Firefox. It reads your school's Brightspace site, which Waterloo calls Learn.
+A browser extension for students at Waterloo, Guelph, Laurier, McMaster, Queen's, Western and TMU, for Chrome and for Firefox. It reads your school's Brightspace site, which Waterloo calls Learn. University of Toronto support (Quercus, which runs on Canvas) is in testing.
 
 [Chrome Web Store](https://chromewebstore.google.com/detail/watnow/iikileknbmejmkaonlhkjkpbfnkidibh) &nbsp;·&nbsp; Firefox Add-ons (listing pending) &nbsp;·&nbsp; [Website](https://watnow.ugmi.ca) &nbsp;·&nbsp; [Privacy policy](https://watnow.ugmi.ca/privacy/)
 
@@ -74,9 +74,10 @@ Firefox for Android is not supported, because extensions cannot open a sidebar t
 This repo is public so you can read exactly what the extension does with your school account before you install it.
 
 - It reads your course site from inside your browser, using the session you're already signed in with. It never sees your password.
-- It only sends GET requests: to your school's `/d2l/api/`, to a quiz's summary page or a closed dropbox's submission history to see whether you've handed it in, and to Crowdmark's student API if you connect it. It can't change anything on any site it reads.
+- It only sends GET requests: to your school's `/d2l/api/` (or Quercus's `/api/v1/` at UofT), to a quiz's summary page or a closed dropbox's submission history to see whether you've handed it in, and to Crowdmark's student API if you connect it. It can't change anything on any site it reads.
 - Waterloo's Learn is the only site it can reach when you install it. Every other site is an optional permission your browser asks you about, and nothing is read from one until you say yes:
   - another school's Brightspace, if you pick that school instead of Waterloo. WATnow reads the same `/d2l/api/` routes on it.
+  - UofT's Quercus, if you pick the University of Toronto. WATnow reads `q.utoronto.ca/api/v1/` for your courses, their assignments and your own submission on each.
   - Crowdmark, if you select **Connect Crowdmark**. It reads `app.crowdmark.com/api/v2/student/` for your courses and their assignment due dates. Disconnecting takes the permission away and its deadlines leave the panel on the next check.
 - Your courses, deadlines and settings are saved in your browser's extension storage on your own computer.
 - The calendar file is made on your computer and sent nowhere. Importing it into a calendar is something you do yourself, with a file you can read first.

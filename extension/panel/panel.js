@@ -6,7 +6,7 @@ import { fmtDate, fmtTime, sameDay } from "../src/core/dates.js";
 import { icon, brandMark, esc, CATEGORY_ICON } from "../src/ui/icons.js";
 import { mountSettings, applyTheme } from "../src/ui/settings-view.js";
 import { liveBase } from "../src/data/live-source.js";
-import { SCHOOLS, schoolById, currentSchool, systemName, homeUrl } from "../src/core/schools.js";
+import { SCHOOLS, schoolById, currentSchool, systemName, homeUrl, platformOf } from "../src/core/schools.js";
 import { TESTER_BUILD } from "../src/core/build.js";
 import { pingPanelOpen } from "../src/core/usage.js";
 import { IS_GECKO } from "../src/core/env.js";
@@ -397,7 +397,9 @@ function handInHTML(r) {
     return `<p class="handin is-checking" role="status"><span class="handin-bar" aria-hidden="true"></span><span>Checking ${esc(site)} for your submission</span></p>`;
   }
   if (r.handIn !== "missing") return "";
-  const where = r.kind === "crowdmark" ? "Crowdmark" : r.kind === "quiz" ? "quiz" : "dropbox";
+  // Canvas calls a dropbox an assignment.
+  const dropbox = platformOf(currentSchool(settings)) === "canvas" ? "assignment" : "dropbox";
+  const where = r.kind === "crowdmark" ? "Crowdmark" : r.kind === "quiz" ? "quiz" : dropbox;
   return `<p class="handin is-missing" role="status">${icon("alert", 16)}<span>${esc(site)} doesn't show a submission for this yet.</span>
     <button class="handin-open" data-act="open" data-id="${esc(r.id)}">Open ${where}</button></p>`;
 }
