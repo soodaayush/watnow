@@ -9,8 +9,9 @@
   Session
     GET /api/v1/users/self
       { id, name, short_name, sortable_name }. 401 means nobody is signed in.
-      Reading with the browser's session (not a token) makes Canvas put
-      "while(1);" in front of every JSON body, so it is stripped before parsing.
+      Older Canvas put "while(1);" in front of JSON read with a session when the
+      request didn't ask for JSON. Current Canvas doesn't, but every read sends
+      Accept: application/json and a leading "while(1);" is stripped anyway.
 
   Courses
     GET /api/v1/courses?enrollment_state=active&include[]=term&per_page=100
@@ -31,6 +32,21 @@
       excused) means handed in; a "graded" with no submitted_at is a mark given
       without a submission (a zero for missing work) and does not count.
       due_at, then lock_at (available until), is the date. Nothing dated is skipped.
+      on_paper, none and external_tool items are "content": Canvas often has no
+      hand-in to show for them (an outside tool only records one if it reports
+      the work as submitted), so ticking one off isn't checked against Canvas.
+
+  What isn't an assignment (once per read, every course)
+    GET /api/v1/planner/items?start_date=...&end_date=...&per_page=100
+      [{ course_id, plannable_type, plannable_id, plannable_date, html_url,
+         plannable: { title, assignment_id, ... }, submissions: { submitted,
+         excused } | false, planner_override: { marked_complete } }]
+      The To Do list's own source. Practice quizzes, ungraded discussions,
+      pages with a to-do date and calendar events have no assignment, so this
+      is the only place they show. Anything with an assignment_id is already
+      read above. A calendar event is kept only when its title reads like a
+      deadline (test, exam, due...), so weekly tutorial times stay out.
+      marked_complete is the student ticking it off in Canvas, which is "done".
 
   One item's submission, for check-off and reminders
     GET /api/v1/courses/{id}/assignments/{id}/submissions/self
@@ -48,6 +64,11 @@ const MAX_PAGES = 25;
 const KEEP_BEFORE_MS = 120 * DAY_MS;
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Planner types that aren't assignments, and the category each counts as.
+const PLANNER_TYPES = { quiz: "quiz", discussion_topic: "discussion", wiki_page: "content", calendar_event: "content" };
+// A calendar event that reads like a deadline rather than a class or office hour.
+const DEADLINE_WORDS = /\b(?:due|deadline|test|midterm|exam|quiz|assignment|problem set|pset|lab|project|presentation|essay|report|proposal|submission)\b/i;
 
 function isoOrNull(v) {
   if (!v || typeof v !== "string") return null;
@@ -94,15 +115,29 @@ export function courseTitle(name, code) {
 }
 
 /** dropbox / quiz / discussion, the same kinds the rest of WATnow knows. */
+// Submission types Canvas can't be relied on to show a hand-in for: a test
+// written on paper, an in-class mark, and an outside tool (Top Hat, iClicker),
+// which only records one when the tool reports the work as submitted.
+const NO_HAND_IN = new Set(["on_paper", "none", "not_graded", "external_tool"]);
+
+/**
+ * dropbox / quiz / discussion, the same kinds the rest of WATnow knows, or
+ * content for an item Canvas can never show as handed in. Content isn't
+ * checked against the site, so ticking it off gives no "nothing handed in"
+ * warning and no last reminder.
+ */
 export function kindOf(a) {
   const types = Array.isArray(a.submission_types) ? a.submission_types : [];
   if (a.is_quiz_assignment || a.quiz_id != null || types.includes("online_quiz")) return "quiz";
   if (types.includes("discussion_topic") || a.discussion_topic) return "discussion";
+  if (types.length && types.every((t) => NO_HAND_IN.has(t))) return "content";
   return "dropbox";
 }
 
 function categoryFor(kind, title) {
   if (kind === "quiz" || kind === "discussion") return kind;
+  // A test written in class is closer to a quiz than to something handed in.
+  if (kind === "content" && /\b(?:test|midterm|exam|quiz)\b/i.test(title || "")) return "quiz";
   return /^\s*lab\b/i.test(title || "") ? "lab" : "assignment";
 }
 
@@ -292,6 +327,54 @@ export class CanvasSource {
     return courses;
   }
 
+  /**
+   * The planner's items for every course, read once per source. Resolves to
+   * the list, or null when it couldn't be read (the assignments still count).
+   */
+  plannerItems() {
+    if (!this.planner) {
+      const from = new Date(this.now.getTime() - KEEP_BEFORE_MS).toISOString();
+      const to = new Date(this.now.getTime() + 240 * DAY_MS).toISOString();
+      this.planner = this.paged(`/api/v1/planner/items?start_date=${encodeURIComponent(from)}&end_date=${encodeURIComponent(to)}&per_page=100`).catch((e) => {
+        if (e.code === "signed-out") throw e;
+        this.report.notes.push(`planner failed (${e.code || "error"})`);
+        return null;
+      });
+    }
+    return this.planner;
+  }
+
+  /** One planner row as a Deadline, or null when it isn't one WATnow shows. */
+  plannerItem(p, course) {
+    const type = p && p.plannable_type;
+    const it = (p && p.plannable) || {};
+    if (!PLANNER_TYPES[type] || it.assignment_id != null) return null;
+    const title = String(it.title || it.name || "").trim();
+    if (!title) return null;
+    if (type === "calendar_event" && !DEADLINE_WORDS.test(title)) return null;
+    const due = isoOrNull(p.plannable_date) || isoOrNull(it.due_at) || isoOrNull(it.todo_date) || isoOrNull(it.start_at);
+    if (!due || Date.parse(due) < this.now.getTime() - KEEP_BEFORE_MS) return null;
+    const sub = p.submissions || null;
+    const handedIn = !!(sub && (sub.submitted || sub.excused));
+    const ticked = !!(p.planner_override && p.planner_override.marked_complete);
+    const category = PLANNER_TYPES[type] === "content" && /\b(?:test|midterm|exam|quiz)\b/i.test(title) ? "quiz" : PLANNER_TYPES[type];
+    return {
+      id: `${course.orgUnitId}:content:${type}-${p.plannable_id}`,
+      courseId: course.id,
+      kind: "content",
+      category,
+      title,
+      dueAt: due,
+      dueField: "due",
+      url: p.html_url ? new URL(p.html_url, this.base).href : `${this.base}/courses/${course.orgUnitId}`,
+      listUrl: `${this.base}/courses/${course.orgUnitId}`,
+      status: handedIn ? "submitted" : ticked ? "done" : "open",
+      completedAt: handedIn || ticked ? this.now.toISOString() : null,
+      moved: null,
+      seenIn: ["canvas-planner"],
+    };
+  }
+
   async listDeadlines(course) {
     const rep = this.report.courses.find((c) => c.orgUnitId === course.orgUnitId) || { tools: {} };
     const rows = await this.paged(`/api/v1/courses/${course.orgUnitId}/assignments?include[]=submission&order_by=due_at&per_page=100`);
@@ -323,7 +406,22 @@ export class CanvasSource {
       if (opens && opens < due) item.opensAt = opens;
       items.push(item);
     }
-    this.readOk.set(course.id, new Set(["canvas"]));
+    const planner = await this.plannerItems();
+    const ok = new Set(["canvas"]);
+    if (planner) {
+      ok.add("canvas-planner");
+      let added = 0;
+      for (const p of planner) {
+        if (!p || Number(p.course_id) !== course.orgUnitId) continue;
+        const item = this.plannerItem(p, course);
+        if (item && !items.some((i) => i.id === item.id)) {
+          items.push(item);
+          added++;
+        }
+      }
+      rep.tools.planner = added;
+    } else rep.tools.planner = "failed";
+    this.readOk.set(course.id, ok);
     rep.tools.assignments = rows.length;
     rep.items = items.length;
     rep.submitted = items.filter((i) => i.status === "submitted").length;

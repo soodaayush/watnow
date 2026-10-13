@@ -61,6 +61,11 @@ describe("helpers", () => {
     assert.equal(kindOf({ submission_types: ["online_quiz"], quiz_id: 9 }), "quiz");
     assert.equal(kindOf({ is_quiz_assignment: true, submission_types: ["external_tool"] }), "quiz");
     assert.equal(kindOf({ submission_types: ["discussion_topic"] }), "discussion");
+    // No hand-in Canvas can be relied on: ticked off without being checked against Canvas.
+    assert.equal(kindOf({ submission_types: ["on_paper"] }), "content");
+    assert.equal(kindOf({ submission_types: ["none"] }), "content");
+    assert.equal(kindOf({ submission_types: ["external_tool"] }), "content");
+    assert.equal(kindOf({ submission_types: ["online_upload", "on_paper"] }), "dropbox");
   });
 
   test("a grade with no submission isn't handed in", () => {
@@ -193,5 +198,51 @@ describe("check-off and reminders", () => {
   test("can't be asked: null, so no false warning", async () => {
     fakeCanvas({});
     assert.equal(await source().submissionState({ id: "101:dropbox:9" }), null);
+  });
+});
+
+describe("planner: what isn't an assignment", () => {
+  const course = { id: "cv101", orgUnitId: 101, code: "MAT137Y1" };
+  const planner = [
+    { course_id: 101, plannable_type: "quiz", plannable_id: 31, plannable_date: "2026-10-15T03:59:00Z", html_url: "/courses/101/quizzes/31", plannable: { title: "Practice Quiz 3", assignment_id: null }, submissions: { submitted: false } },
+    { course_id: 101, plannable_type: "discussion_topic", plannable_id: 41, plannable_date: "2026-10-16T03:59:00Z", html_url: "/courses/101/discussion_topics/41", plannable: { title: "Introduce yourself", todo_date: "2026-10-16T03:59:00Z" }, submissions: { submitted: true } },
+    { course_id: 101, plannable_type: "wiki_page", plannable_id: 51, plannable_date: "2026-10-14T03:59:00Z", html_url: "/courses/101/pages/week-6-reading", plannable: { title: "Week 6 reading" }, submissions: false, planner_override: { marked_complete: true } },
+    { course_id: 101, plannable_type: "calendar_event", plannable_id: 61, plannable_date: "2026-10-21T22:00:00Z", html_url: "/calendar?event_id=61", plannable: { title: "Term Test 1", start_at: "2026-10-21T22:00:00Z" }, submissions: false },
+    { course_id: 101, plannable_type: "calendar_event", plannable_id: 62, plannable_date: "2026-10-14T18:00:00Z", plannable: { title: "TUT0101 tutorial" }, submissions: false },
+    { course_id: 101, plannable_type: "quiz", plannable_id: 71, plannable_date: "2026-10-10T03:59:00Z", plannable: { title: "Quiz 1", assignment_id: 3 } },
+    { course_id: 101, plannable_type: "announcement", plannable_id: 81, plannable_date: "2026-10-09T12:00:00Z", plannable: { title: "Welcome" } },
+    { course_id: 999, plannable_type: "quiz", plannable_id: 91, plannable_date: "2026-10-15T03:59:00Z", plannable: { title: "Other course quiz" } },
+  ];
+
+  test("ungraded quizzes, discussions, to-do pages and deadline-like events are added", async () => {
+    fakeCanvas({ "/api/v1/courses/101/assignments": { body: [] }, "/api/v1/planner/items": { body: planner } });
+    const src = source();
+    const items = await src.listDeadlines(course);
+    const by = Object.fromEntries(items.map((i) => [i.title, i]));
+    assert.deepEqual(Object.keys(by).sort(), ["Introduce yourself", "Practice Quiz 3", "Term Test 1", "Week 6 reading"]);
+    assert.equal(by["Practice Quiz 3"].category, "quiz");
+    assert.equal(by["Practice Quiz 3"].status, "open");
+    assert.equal(by["Practice Quiz 3"].url, `${BASE}/courses/101/quizzes/31`);
+    assert.equal(by["Introduce yourself"].status, "submitted");
+    assert.equal(by["Week 6 reading"].status, "done", "ticked off in Quercus");
+    assert.equal(by["Term Test 1"].category, "quiz");
+    for (const i of items) assert.equal(i.kind, "content", "never checked against Canvas on check-off");
+    assert.deepEqual([...src.readOk.get("cv101")].sort(), ["canvas", "canvas-planner"]);
+  });
+
+  test("the planner is read once for every course", async () => {
+    const seen = fakeCanvas({ "/api/v1/courses/101/assignments": { body: [] }, "/api/v1/courses/102/assignments": { body: [] }, "/api/v1/planner/items": { body: planner } });
+    const src = source();
+    await src.listDeadlines(course);
+    await src.listDeadlines({ id: "cv102", orgUnitId: 102, code: "CSC110Y1" });
+    assert.equal(seen.filter((p) => p.startsWith("/api/v1/planner/items")).length, 1);
+  });
+
+  test("a planner that fails leaves the assignments, and the planner's old items aren't dropped", async () => {
+    fakeCanvas({ "/api/v1/courses/101/assignments": { body: [{ id: 1, name: "PS1", due_at: "2026-10-20T03:59:00Z", submission_types: ["online_upload"], published: true }] } });
+    const src = source();
+    const items = await src.listDeadlines(course);
+    assert.deepEqual(items.map((i) => i.title), ["PS1"]);
+    assert.deepEqual([...src.readOk.get("cv101")], ["canvas"], "planner items from before stay");
   });
 });
