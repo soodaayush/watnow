@@ -10,16 +10,20 @@
 //   home     the page "Open <system>" sends students to. Every Brightspace site
 //            answers /d2l/home and sends a signed-out visitor to its own login.
 //   platform "brightspace" (the default) or "canvas"
+//   crowdmark the school's slug on Crowdmark's sign-in page
+//            (app.crowdmark.com/sign-in/<slug>), for a school whose students
+//            can connect Crowdmark. Waterloo's page signs in with LEARN; UofT's
+//            sends students through Quercus or email.
 
 export const SCHOOLS = [
-  { id: "uwaterloo", name: "University of Waterloo", system: "Learn", origin: "https://learn.uwaterloo.ca" },
+  { id: "uwaterloo", name: "University of Waterloo", system: "Learn", origin: "https://learn.uwaterloo.ca", crowdmark: "waterloo" },
   { id: "uoguelph", name: "University of Guelph", system: "CourseLink", origin: "https://courselink.uoguelph.ca" },
   { id: "wlu", name: "Wilfrid Laurier University", system: "MyLearningSpace", origin: "https://mylearningspace.wlu.ca" },
   { id: "mcmaster", name: "McMaster University", system: "Avenue to Learn", origin: "https://avenue.cllmcmaster.ca" },
   { id: "queensu", name: "Queen's University", system: "onQ", origin: "https://onq.queensu.ca" },
   { id: "uwo", name: "Western University", system: "OWL", origin: "https://westernu.brightspace.com" },
   { id: "tmu", name: "Toronto Metropolitan University", system: "D2L Brightspace", origin: "https://courses.torontomu.ca", aliases: ["https://courses.ryerson.ca"] },
-  { id: "utoronto", name: "University of Toronto", system: "Quercus", origin: "https://q.utoronto.ca", platform: "canvas", home: "/" },
+  { id: "utoronto", name: "University of Toronto", system: "Quercus", origin: "https://q.utoronto.ca", platform: "canvas", home: "/", crowdmark: "utoronto" },
 ];
 
 export const DEFAULT_SCHOOL = "uwaterloo";

@@ -39,11 +39,28 @@
 */
 
 import { termCodeFor, termFromText } from "./live-source.js";
-import { DEFAULT_SCHOOL } from "../core/schools.js";
+import { DEFAULT_SCHOOL, currentSchool, schoolById } from "../core/schools.js";
 
 export const CROWDMARK_BASE = "https://app.crowdmark.com";
 export const CROWDMARK_ORIGIN = `${CROWDMARK_BASE}/*`;
 export const CROWDMARK_SIGN_IN = `${CROWDMARK_BASE}/sign-in/waterloo`;
+
+/** The school WATnow reads, or Waterloo for an install from before the picker. */
+function crowdmarkSchool(settings) {
+  return currentSchool(settings) || (settings && settings.school ? null : schoolById(DEFAULT_SCHOOL));
+}
+
+/** Where a student signs in to Crowdmark for their school. */
+export function crowdmarkSignIn(settings) {
+  const school = crowdmarkSchool(settings);
+  return `${crowdmarkBase(settings)}/sign-in/${(school && school.crowdmark) || "waterloo"}`;
+}
+
+/** True when the student's school is one whose students can connect Crowdmark. */
+export function crowdmarkOffered(settings) {
+  const school = crowdmarkSchool(settings);
+  return !!(school && school.crowdmark);
+}
 
 const TIMEOUT_MS = 20000;
 const GAP_MS = 150;
@@ -70,12 +87,12 @@ export function crowdmarkBase(settings) {
 }
 
 /**
- * True once the student gave WATnow access to Crowdmark. Crowdmark is Waterloo
- * only, so a student who switched to another school reads none of it, even with
- * the permission still granted.
+ * True once the student gave WATnow access to Crowdmark. Only schools with a
+ * Crowdmark slug offer it, so a student who switched to another school reads
+ * none of it, even with the permission still granted.
  */
 export async function crowdmarkAllowed(settings) {
-  if (settings && settings.school && settings.school !== DEFAULT_SCHOOL) return false;
+  if (!crowdmarkOffered(settings)) return false;
   try {
     return await chrome.permissions.contains({ origins: [`${crowdmarkBase(settings)}/*`] });
   } catch {
@@ -172,6 +189,12 @@ const squash = (s) => String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 /** "ECE 207 - Fall 2026" gives { code: "ECE 207", term: 1269 }. */
 export function parseCrowdmarkCourse(name, slug) {
   const text = String(name || "");
+  // UofT: "CHM135H1 F LEC0101" or "CHM135H1F", the same code Quercus gives.
+  const uoft = text.match(/^\s*([A-Z]{3}\d{3}[HY]\d)/);
+  if (uoft) {
+    const term = termFromText(text) || termFromText(String(slug || "").replace(/-/g, " "));
+    return { code: uoft[1], term, hasCode: true };
+  }
   const m = text.match(/^\s*([A-Za-z]{2,8})\s*[-_ ]?\s*(\d{2,3}[A-Za-z]?)\b/);
   const code = m ? `${m[1].toUpperCase()} ${m[2].toUpperCase()}` : text.trim().slice(0, 40);
   const term = termFromText(text) || termFromText(String(slug || "").replace(/-/g, " "));

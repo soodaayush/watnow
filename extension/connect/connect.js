@@ -19,7 +19,7 @@
 import { brandMark, esc } from "../src/ui/icons.js";
 import { getSettings } from "../src/core/store.js";
 import { applyTheme } from "../src/ui/settings-view.js";
-import { crowdmarkBase } from "../src/data/crowdmark-source.js";
+import { crowdmarkBase, crowdmarkSignIn } from "../src/data/crowdmark-source.js";
 
 const APP = chrome.i18n.getMessage("appName") || "WATnow";
 const page = document.getElementById("page");
@@ -27,7 +27,7 @@ const page = document.getElementById("page");
 let settings = null;
 let busy = false;
 
-const signInUrl = () => `${crowdmarkBase(settings)}/sign-in/waterloo`;
+const signInUrl = () => crowdmarkSignIn(settings);
 
 /**
  * Granting access by hand, for a browser whose prompt never arrives. Firefox
