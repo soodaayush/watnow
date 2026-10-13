@@ -689,8 +689,8 @@ function renderStateView(kind) {
   const views = {
     "needs-permission": {
       mark: icon("lock", 24),
-      title: "Let WATnow read Learn",
-      body: `${APP} reads learn.uwaterloo.ca with the session already signed in on this browser. Your browser is holding that access back, so nothing can be read until you allow it.`,
+      title: `Let ${APP} read ${lms()}`,
+      body: `${APP} reads ${new URL(liveBase(settings)).host} with the session already signed in on this browser. Your browser is holding that access back, so nothing can be read until you allow it.`,
       action: `<div class="row-actions"><button class="btn btn-primary" data-act="grant">Allow access</button></div>`,
     },
     "signed-out": {
