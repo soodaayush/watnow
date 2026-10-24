@@ -1288,3 +1288,110 @@ html:not(.is-animating) .is-moved:not(.is-travelling) {
     opacity: 0.5;
   }
 }
+
+/* ---------- Adding a deadline yourself ---------- */
+.add-row {
+  display: flex;
+  justify-content: flex-start;
+  margin: 4px 0 12px;
+}
+
+.add-deadline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.manual-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  backdrop-filter: blur(2px);
+}
+
+.manual-card {
+  width: 100%;
+  max-width: 360px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  background: var(--sheet);
+  border-radius: var(--radius-md);
+  padding: 18px;
+  box-shadow: var(--clay-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.manual-heading {
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
+  margin: 0;
+  color: var(--ink);
+}
+
+.manual-desc {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  line-height: var(--leading-normal);
+  margin: -4px 0 0;
+}
+
+.manual-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--ink);
+  min-width: 0;
+}
+
+.manual-field em {
+  font-style: normal;
+  font-weight: var(--weight-medium);
+  color: var(--ink-muted);
+}
+
+.manual-field .input {
+  width: 100%;
+  font-weight: var(--weight-medium);
+  color: var(--ink);
+}
+
+.manual-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.manual-error {
+  margin: 0;
+  min-height: 1em;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--late);
+}
+
+.manual-error:empty {
+  display: none;
+}
+
+.manual-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.manual-gap {
+  flex: 1;
+}
+
+.manual-delete {
+  color: var(--late);
+}

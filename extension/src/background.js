@@ -2,6 +2,7 @@
 // keeps state, sets the toolbar badge, sends notifications and runs the demo
 // shortcuts.
 
+import { MANUAL_KEY, applyManual, validateManual } from "./core/manual.js";
 import { getState, setState, getSettings, setSettings, getCatalog, setCatalog, emptyState, DEFAULT_SETTINGS } from "./core/store.js";
 import { buildCatalog, learnUrl } from "./data/demo-source.js";
 import { createSource } from "./data/source.js";
@@ -31,6 +32,9 @@ function mutate(fn) {
   const run = chain.then(async () => {
     const s = await getState();
     const next = (await fn(s)) || s;
+    // Deadlines the student added are kept apart from what the school's site
+    // returns, so whatever this write did to the list, they go back in.
+    applyManual(next, await getManual());
     await setState(next);
     return next;
   });
@@ -39,6 +43,53 @@ function mutate(fn) {
 }
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/* ------------------------------------------------------------------ */
+/* Deadlines the student added (src/core/manual.js)                    */
+/* ------------------------------------------------------------------ */
+
+async function getManual() {
+  try {
+    const { [MANUAL_KEY]: list } = await chrome.storage.local.get(MANUAL_KEY);
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+async function setManual(list) {
+  await chrome.storage.local.set({ [MANUAL_KEY]: list });
+}
+
+/** Adds or changes one. Resolves to { ok, id } or { ok: false, reason } for the form. */
+async function saveManual(input) {
+  const list = await getManual();
+  const prev = input && input.id ? list.find((m) => m.id === input.id) : null;
+  if (input && input.id && !prev) return { ok: false, reason: "That deadline was already deleted." };
+  const { item, error } = validateManual(input, prev);
+  if (error) return { ok: false, reason: error };
+  await setManual(prev ? list.map((m) => (m.id === item.id ? item : m)) : [...list, item]);
+  await mutate((st) => {
+    st.seq += 1;
+    st.lastEvent = { type: "manual", itemId: item.id, seq: st.seq, at: nowIso() };
+  });
+  await refreshBadge();
+  await scheduleReminders();
+  return { ok: true, id: item.id };
+}
+
+async function deleteManual(id) {
+  const list = await getManual();
+  if (!list.some((m) => m.id === id)) return { ok: true };
+  await setManual(list.filter((m) => m.id !== id));
+  await mutate((st) => {
+    st.seq += 1;
+    st.lastEvent = { type: "manual", itemId: id, seq: st.seq, at: nowIso() };
+  });
+  await refreshBadge();
+  await scheduleReminders();
+  return { ok: true };
+}
 const nowIso = () => new Date().toISOString();
 
 /* ------------------------------------------------------------------ */
@@ -1331,6 +1382,21 @@ async function learnSubmitted({ orgUnitId, itemId }) {
 
 async function toggleDone(itemId) {
   const settings = await getSettings();
+  // One the student added: its stored copy is the one that counts, so change
+  // that and let mutate() put it back in the list.
+  const list = await getManual();
+  const own = list.find((m) => m.id === itemId);
+  if (own) {
+    const done = own.status !== "done";
+    await setManual(list.map((m) => (m.id === itemId ? { ...m, status: done ? "done" : "open", completedAt: done ? nowIso() : null } : m)));
+    await mutate((st) => {
+      st.seq += 1;
+      st.lastEvent = { type: done ? "marked" : "unmarked", itemId, seq: st.seq, at: nowIso() };
+    });
+    await refreshBadge();
+    await scheduleReminders();
+    return { ok: true };
+  }
   let ask = null;
   await mutate((st) => {
     const item = st.items.find((i) => i.id === itemId);
@@ -1427,6 +1493,13 @@ async function handle(msg, sender) {
     else if (msg.type === "calendar:sync") await requestCalendarSync();
     else return { ok: false, reason: "Unknown calendar action." };
     return { ok: true };
+  }
+  if (msg && (msg.type === "manual:save" || msg.type === "manual:delete")) {
+    // Only WATnow's own pages add deadlines, never a content script on a school's site.
+    if (sender?.id !== chrome.runtime.id || !String(sender.url || "").startsWith(chrome.runtime.getURL(""))) {
+      return { ok: false, reason: "Extension page required." };
+    }
+    return msg.type === "manual:save" ? saveManual(msg.item) : deleteManual(String(msg.id || ""));
   }
   switch (msg && msg.type) {
     case "panel:opened": {

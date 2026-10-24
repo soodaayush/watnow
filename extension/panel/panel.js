@@ -373,7 +373,7 @@ function rowHTML(r) {
     <button class="check" data-act="toggle" data-id="${esc(r.id)}" aria-pressed="${done}" ${r.status === "submitted" ? 'aria-disabled="true"' : ""} aria-label="${esc(checkLabel)}">
       <span class="check-ring">${icon("check", 14, "check-mark")}</span>
     </button>
-    <button class="row-open" data-act="open" data-id="${esc(r.id)}">
+    <button class="row-open" data-act="${r.manual ? "manual-edit" : "open"}" data-id="${esc(r.id)}"${r.manual ? ` aria-label="${esc(`Edit ${r.code} ${r.title}`)}"` : ""}>
       <span class="row-main">
         <span class="meta"><span class="chip">${esc(r.code)}</span><span class="type">${icon(CATEGORY_ICON[r.category] || "doc", 16)}<span class="type-text">${esc(r.type)}</span></span></span>
         <span class="title">${esc(r.title)}</span>
@@ -462,6 +462,7 @@ function renderList() {
         ${m.verdict.detail ? `<p class="late-line">${icon("alert", 18)}<span>${esc(m.verdict.detail)}</span></p>` : ""}
       </section>
       <div class="filters" role="group" aria-label="Show deadlines for" data-flip="filters">${chips}</div>
+      <div class="add-row" data-flip="add"><button class="btn btn-quiet btn-sm add-deadline" data-act="manual-add">${icon("calendar-add", 18)}<span>Add a deadline</span></button></div>
       ${empty}
       <div class="groups">${m.groups.map(groupHTML).join("")}</div>
       <footer class="foot" data-flip="foot">
@@ -941,6 +942,129 @@ function onState(next) {
 /* Events                                                              */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/* Adding a deadline yourself                                          */
+/* ------------------------------------------------------------------ */
+
+const MANUAL_TYPES = [
+  ["assignment", "Assignment"],
+  ["lab", "Lab"],
+  ["quiz", "Quiz or test"],
+  ["discussion", "Discussion"],
+  ["content", "Other"],
+];
+
+const pad2 = (n) => String(n).padStart(2, "0");
+const localDate = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const localTime = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+
+/**
+ * The add/edit form, over the list. For a course whose prof doesn't post on
+ * the school's site, or anything that isn't there at all. With an id, it edits
+ * that deadline and can delete it.
+ */
+function openManualForm(id = null) {
+  closeManualForm();
+  const item = id ? (state.items || []).find((i) => i.id === id && i.manual) : null;
+  if (id && !item) return;
+  const courses = (state.courses || []).filter((c) => c.id !== "personal");
+  const due = item ? new Date(item.dueAt) : null;
+  const courseOptions = [...courses.map((c) => [c.id, c.name ? `${c.code}: ${c.name}` : c.code]), ["personal", "Personal (no course)"]]
+    .map(([v, label]) => `<option value="${esc(v)}" ${(item ? item.courseId : filter !== "all" ? filter : courses[0] ? courses[0].id : "personal") === v ? "selected" : ""}>${esc(label)}</option>`)
+    .join("");
+  const typeOptions = MANUAL_TYPES.map(([v, label]) => `<option value="${v}" ${(item ? item.category : "assignment") === v ? "selected" : ""}>${label}</option>`).join("");
+  const overlay = document.createElement("div");
+  overlay.id = "manual-form";
+  overlay.className = "manual-backdrop";
+  overlay.innerHTML = `
+    <form class="manual-card" role="dialog" aria-modal="true" aria-labelledby="manual-title" novalidate>
+      <h2 id="manual-title" class="manual-heading">${item ? "Edit deadline" : "Add a deadline"}</h2>
+      <p class="manual-desc">For anything your prof doesn't post on ${esc(lms())}. It gets reminders like everything else.</p>
+      <label class="manual-field"><span>Name</span>
+        <input class="input" name="title" maxlength="120" required autocomplete="off" placeholder="Problem set 3" value="${esc(item ? item.title : "")}"></label>
+      <label class="manual-field"><span>Course</span>
+        <select class="input" name="courseId">${courseOptions}</select></label>
+      <label class="manual-field"><span>Type</span>
+        <select class="input" name="category">${typeOptions}</select></label>
+      <div class="manual-pair">
+        <label class="manual-field"><span>Due date</span>
+          <input class="input" type="date" name="date" required value="${due ? localDate(due) : localDate(new Date())}"></label>
+        <label class="manual-field"><span>Time</span>
+          <input class="input" type="time" name="time" required value="${due ? localTime(due) : "23:59"}"></label>
+      </div>
+      <label class="manual-field"><span>Link <em>(optional)</em></span>
+        <input class="input" type="url" name="url" autocomplete="off" placeholder="https://" value="${esc(item && item.url ? item.url : "")}"></label>
+      <p class="manual-error" role="alert"></p>
+      <div class="manual-actions">
+        ${item ? '<button type="button" class="btn btn-quiet btn-sm manual-delete" data-manual="delete">Delete</button>' : ""}
+        <span class="manual-gap"></span>
+        <button type="button" class="btn btn-quiet btn-sm" data-manual="cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary btn-sm">${item ? "Save" : "Add"}</button>
+      </div>
+    </form>`;
+  document.body.appendChild(overlay);
+  const form = overlay.querySelector("form");
+  const error = overlay.querySelector(".manual-error");
+  const returnFocus = document.activeElement;
+  const close = () => {
+    closeManualForm();
+    if (returnFocus && returnFocus.isConnected) returnFocus.focus();
+  };
+  overlay.addEventListener("click", async (e) => {
+    if (e.target === overlay) return close();
+    const act = e.target.closest("[data-manual]");
+    if (!act) return;
+    if (act.dataset.manual === "cancel") return close();
+    if (act.dataset.manual === "delete") {
+      act.disabled = true;
+      await send("manual:delete", { id: item.id });
+      announce(`${item.title} deleted.`);
+      close();
+    }
+  });
+  overlay.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      close();
+    }
+  });
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = new FormData(form);
+    const date = String(f.get("date") || "");
+    const time = String(f.get("time") || "23:59");
+    const dueAt = date ? new Date(`${date}T${time}`) : null;
+    if (!String(f.get("title") || "").trim()) {
+      error.textContent = "Give it a name.";
+      form.elements.title.focus();
+      return;
+    }
+    if (!dueAt || Number.isNaN(dueAt.getTime())) {
+      error.textContent = "Pick a due date and time.";
+      form.elements.date.focus();
+      return;
+    }
+    const submit = form.querySelector('[type="submit"]');
+    submit.disabled = true;
+    const res = await send("manual:save", {
+      item: { id: item ? item.id : undefined, title: f.get("title"), courseId: f.get("courseId"), category: f.get("category"), dueAt: dueAt.toISOString(), url: f.get("url") },
+    });
+    submit.disabled = false;
+    if (!res || !res.ok) {
+      error.textContent = (res && res.reason) || "That didn't save. Try again.";
+      return;
+    }
+    announce(item ? `${f.get("title")} saved.` : `${f.get("title")} added.`);
+    close();
+  });
+  form.elements.title.focus();
+}
+
+function closeManualForm() {
+  const open = document.getElementById("manual-form");
+  if (open) open.remove();
+}
+
 app.addEventListener("click", (e) => {
   const chip = e.target.closest("[data-filter]");
   if (chip) {
@@ -961,6 +1085,12 @@ app.addEventListener("click", (e) => {
       break;
     case "open":
       send("item:open", { itemId: t.dataset.id });
+      break;
+    case "manual-add":
+      openManualForm();
+      break;
+    case "manual-edit":
+      openManualForm(t.dataset.id);
       break;
     case "retry":
       send("panel:rescan");
