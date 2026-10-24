@@ -1,6 +1,7 @@
 import { getState, getSettings, setSettings, getFilter, setFilter, emptyState, getCalendarState, emptyCalendarState } from "../src/core/store.js";
 import { googleConfigured } from "../src/calendar/config.js";
 import { updateCalendarView, wireCalendarControls } from "../src/ui/calendar-view.js";
+import { createDuePicker } from "../src/ui/due-picker.js";
 import { buildModel } from "../src/core/model.js";
 import { fmtDate, fmtTime, sameDay } from "../src/core/dates.js";
 import { icon, brandMark, esc, CATEGORY_ICON } from "../src/ui/icons.js";
@@ -957,9 +958,6 @@ const MANUAL_TYPES = [
   ["content", "Other"],
 ];
 
-const pad2 = (n) => String(n).padStart(2, "0");
-const localDate = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-const localTime = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 
 /**
  * The add/edit form, over the list. For a course whose prof doesn't post on
@@ -989,12 +987,8 @@ function openManualForm(id = null) {
         <select class="input" name="courseId">${courseOptions}</select></label>
       <label class="manual-field"><span>Type</span>
         <select class="input" name="category">${typeOptions}</select></label>
-      <div class="manual-pair">
-        <label class="manual-field"><span>Due date</span>
-          <input class="input" type="date" name="date" required value="${due ? localDate(due) : localDate(new Date())}"></label>
-        <label class="manual-field"><span>Time</span>
-          <input class="input" type="time" name="time" required value="${due ? localTime(due) : "23:59"}"></label>
-      </div>
+      <div class="manual-field" role="group" aria-labelledby="manual-due-label"><span id="manual-due-label">Due</span>
+        <div class="due-picker"></div></div>
       <label class="manual-field"><span>Link <em>(optional)</em></span>
         <input class="input" type="url" name="url" autocomplete="off" placeholder="https://" value="${esc(item && item.url ? item.url : "")}"></label>
       <p class="manual-error" role="alert"></p>
@@ -1006,6 +1000,7 @@ function openManualForm(id = null) {
       </div>
     </form>`;
   document.body.appendChild(overlay);
+  const picker = createDuePicker(overlay.querySelector(".due-picker"), due);
   const form = overlay.querySelector("form");
   const error = overlay.querySelector(".manual-error");
   const returnFocus = document.activeElement;
@@ -1034,9 +1029,7 @@ function openManualForm(id = null) {
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = new FormData(form);
-    const date = String(f.get("date") || "");
-    const time = String(f.get("time") || "23:59");
-    const dueAt = date ? new Date(`${date}T${time}`) : null;
+    const dueAt = picker.value;
     if (!String(f.get("title") || "").trim()) {
       error.textContent = "Give it a name.";
       form.elements.title.focus();
@@ -1044,7 +1037,6 @@ function openManualForm(id = null) {
     }
     if (!dueAt || Number.isNaN(dueAt.getTime())) {
       error.textContent = "Pick a due date and time.";
-      form.elements.date.focus();
       return;
     }
     const submit = form.querySelector('[type="submit"]');
