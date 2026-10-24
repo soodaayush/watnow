@@ -462,7 +462,10 @@ function renderList() {
         ${m.verdict.detail ? `<p class="late-line">${icon("alert", 18)}<span>${esc(m.verdict.detail)}</span></p>` : ""}
       </section>
       <div class="filters" role="group" aria-label="Show deadlines for" data-flip="filters">${chips}</div>
-      <div class="add-row" data-flip="add"><button class="btn btn-quiet btn-sm add-deadline" data-act="manual-add">${icon("calendar-add", 18)}<span>Add a deadline</span></button></div>
+      <button class="add-card" data-act="manual-add" data-flip="add">
+        <span class="add-plus" aria-hidden="true">${icon("plus", 18)}</span>
+        <span class="add-text"><span class="add-title">Add a deadline</span><span class="add-sub">For anything your prof doesn't post on ${esc(lms())}</span></span>
+      </button>
       ${empty}
       <div class="groups">${m.groups.map(groupHTML).join("")}</div>
       <footer class="foot" data-flip="foot">
