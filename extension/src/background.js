@@ -69,7 +69,15 @@ async function saveManual(input) {
   const { item, error } = validateManual(input, prev);
   if (error) return { ok: false, reason: error };
   await setManual(prev ? list.map((m) => (m.id === item.id ? item : m)) : [...list, item]);
+  const settings = await getSettings();
   await mutate((st) => {
+    // A reminder whose time already passed (a deadline added for tonight, with
+    // reminders a day ahead) is marked handled, so adding one doesn't fire a
+    // notification at the student who just typed it in.
+    const cutoff = Date.now();
+    for (const p of plannedReminders([item], settings, new Date(0))) {
+      if (p.fireAt.getTime() <= cutoff && !st.sent[p.key]) st.sent[p.key] = nowIso();
+    }
     st.seq += 1;
     st.lastEvent = { type: "manual", itemId: item.id, seq: st.seq, at: nowIso() };
   });
@@ -544,12 +552,18 @@ async function readLive(source, epoch, { onCourses, onProgress, onCrowdmark, pre
   }
   if (cmOn && onCrowdmark) await onCrowdmark("reading", 0);
   const keptExtras = [];
+  // Units left out of the list for having nothing coming up. A student can
+  // still add their own deadlines to one (a course whose prof posts nothing).
+  const hidden = [];
   const hadItems = new Set(prevItems.map((i) => i.courseId));
   for (const c of extras) {
     if (epoch !== modeEpoch) throw abortError();
     try {
       const found = source.keepTermless(c, await source.listDeadlines(c));
-      if (!found) continue;
+      if (!found) {
+        hidden.push(c);
+        continue;
+      }
       keptExtras.push(c);
       items.push(...found);
     } catch (e) {
@@ -558,7 +572,7 @@ async function readLive(source, epoch, { onCourses, onProgress, onCrowdmark, pre
       if (hadItems.has(c.id)) {
         keptExtras.push(c);
         failed.add(c.id);
-      }
+      } else hidden.push(c);
     }
   }
   if (epoch !== modeEpoch) throw abortError();
@@ -575,6 +589,7 @@ async function readLive(source, epoch, { onCourses, onProgress, onCrowdmark, pre
     items: items.filter((i) => ids.has(i.courseId)),
     failed,
     readOk,
+    hidden: hidden.map(({ id, code, name, color, orgUnitId, homeUrl }) => ({ id, code, name, color, orgUnitId, homeUrl, current: false })),
     crowdmark: { status: crowdmark.status, report: crowdmark.report },
     allFailed: courses.length > 0 && courses.every((c) => failed.has(c.id)),
   };
@@ -673,6 +688,7 @@ function carryOf(s) {
   return {
     items: Array.isArray(s.carry) ? s.carry : s.items || [],
     courses: s.courses || [],
+    otherCourses: s.otherCourses || [],
     student: s.student || null,
     lastSyncAt: s.lastSyncAt || null,
   };
@@ -686,6 +702,7 @@ function carryOf(s) {
 function restoreAfterFailure(s, carry, kind, error) {
   s.items = carry.items || [];
   s.courses = carry.courses || [];
+  s.otherCourses = carry.otherCourses || [];
   s.student = carry.student || null;
   s.lastSyncAt = carry.lastSyncAt || null;
   delete s.carry;
@@ -772,6 +789,7 @@ async function runLiveScan(settings, epoch) {
     const latest = await getSettings();
     const next = await mutate((s) => {
       s.courses = result.courses;
+      s.otherCourses = result.hidden || [];
       s.student = result.session.student || null;
       s.scan.courses = s.scan.courses.filter((p) => ids.has(p.courseId) || p.courseId === CROWDMARK_ROW);
       s.items = items;
@@ -894,6 +912,7 @@ async function runLiveSync({ fromPanel = false } = {}) {
       const merged = mergeLive(s.items, result.items, { failed: result.failed, readOk: result.readOk, courseIds: ids });
       moved = merged.moved;
       s.courses = result.courses;
+      s.otherCourses = result.hidden || [];
       s.student = result.session.student || s.student || null;
       s.items = merged.items;
       s.crowdmark = crowdmarkState(s.crowdmark, result.crowdmark.status);

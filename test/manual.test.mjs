@@ -72,3 +72,22 @@ describe("putting them in the list", () => {
     assert.deepEqual(state.items, []);
   });
 });
+
+describe("a course with nothing posted", () => {
+  const mine = (id, courseId) => ({ id, courseId, kind: "manual", manual: true, title: id, dueAt: "2026-10-30T03:59:00.000Z", status: "open" });
+  const lab = { id: "ou777", code: "PHYS 1080", name: "Physics Lab", color: "pink", orgUnitId: 777, current: false };
+
+  test("is brought into the list, with its own chip, once it has a deadline", () => {
+    const state = applyManual({ courses: [course("ou1", "MATH 1200")], otherCourses: [lab], items: [] }, [mine("manual:a", "ou777")]);
+    assert.equal(state.items[0].courseId, "ou777", "not Personal");
+    const shown = state.courses.find((c) => c.id === "ou777");
+    assert.ok(shown && shown.current, "shown as a current course");
+    assert.ok(!state.courses.some((c) => c.id === PERSONAL_ID));
+  });
+
+  test("leaves again when its last deadline goes", () => {
+    const once = applyManual({ courses: [course("ou1", "MATH 1200")], otherCourses: [lab], items: [] }, [mine("manual:a", "ou777")]);
+    const after = applyManual(once, []);
+    assert.deepEqual(after.courses.map((c) => c.id), ["ou1"]);
+  });
+});

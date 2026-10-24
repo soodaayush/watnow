@@ -13,9 +13,11 @@
   failed read or course change can lose one. Delete my data clears them with
   everything else.
 
-  An item keeps the course it was added under. If that course isn't in the list
-  any more (a new term, a school change), it shows under "Personal" instead of
-  disappearing, and goes back to its course if the course returns.
+  An item keeps the course it was added under. A course left out of the list
+  for having nothing posted (state.otherCourses) comes back into it with its
+  own chip as soon as it has one of these. If the course isn't there at all
+  any more (a new term, a school change), the item shows under "Personal"
+  instead of disappearing, and goes back to its course if the course returns.
 */
 
 export const MANUAL_KEY = "manualItems";
@@ -77,10 +79,20 @@ export function validateManual(input, prev = null, now = new Date()) {
 export function applyManual(state, manual) {
   if (!state || !Array.isArray(state.items)) return state;
   const list = Array.isArray(manual) ? manual : [];
-  const courses = (state.courses || []).filter((c) => c.id !== PERSONAL_ID);
-  const known = new Set(courses.map((c) => c.id));
-  const placed = list.map((m) => ({ ...m, courseId: known.has(m.courseId) ? m.courseId : PERSONAL_ID }));
+  const shown = (state.courses || []).filter((c) => c.id !== PERSONAL_ID && !c.byManual);
+  const known = new Set(shown.map((c) => c.id));
+  const hidden = new Map((state.otherCourses || []).map((c) => [c.id, c]));
+  const brought = [];
+  const placed = list.map((m) => {
+    if (known.has(m.courseId)) return { ...m };
+    const c = hidden.get(m.courseId);
+    if (c) {
+      if (!brought.some((b) => b.id === c.id)) brought.push({ ...c, current: true, byManual: true });
+      return { ...m };
+    }
+    return { ...m, courseId: PERSONAL_ID };
+  });
   state.items = state.items.filter((i) => !i.manual).concat(placed);
-  state.courses = placed.some((m) => m.courseId === PERSONAL_ID) ? [...courses, { ...PERSONAL_COURSE }] : courses;
+  state.courses = [...shown, ...brought, ...(placed.some((m) => m.courseId === PERSONAL_ID) ? [{ ...PERSONAL_COURSE }] : [])];
   return state;
 }

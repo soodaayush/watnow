@@ -969,10 +969,18 @@ function openManualForm(id = null) {
   const item = id ? (state.items || []).find((i) => i.id === id && i.manual) : null;
   if (id && !item) return;
   const courses = (state.courses || []).filter((c) => c.id !== "personal");
+  // Courses left out of the list for having nothing posted: the reason most
+  // students add a deadline at all, so they're offered too.
+  const listed = new Set(courses.map((c) => c.id));
+  const others = (state.otherCourses || []).filter((c) => !listed.has(c.id));
   const due = item ? new Date(item.dueAt) : null;
-  const courseOptions = [...courses.map((c) => [c.id, c.name ? `${c.code}: ${c.name}` : c.code]), ["personal", "Personal (no course)"]]
-    .map(([v, label]) => `<option value="${esc(v)}" ${(item ? item.courseId : filter !== "all" ? filter : courses[0] ? courses[0].id : "personal") === v ? "selected" : ""}>${esc(label)}</option>`)
-    .join("");
+  const chosen = item ? item.courseId : filter !== "all" && filter !== "personal" ? filter : courses[0] ? courses[0].id : "personal";
+  const option = (c) => `<option value="${esc(c.id)}" ${chosen === c.id ? "selected" : ""}>${esc(c.name ? `${c.code}: ${c.name}` : c.code)}</option>`;
+  const courseOptions = [
+    courses.map(option).join(""),
+    others.length ? `<optgroup label="${esc(`Other courses on ${lms()}`)}">${others.map(option).join("")}</optgroup>` : "",
+    `<option value="personal" ${chosen === "personal" ? "selected" : ""}>Personal (no course)</option>`,
+  ].join("");
   const typeOptions = MANUAL_TYPES.map(([v, label]) => `<option value="${v}" ${(item ? item.category : "assignment") === v ? "selected" : ""}>${label}</option>`).join("");
   const overlay = document.createElement("div");
   overlay.id = "manual-form";
