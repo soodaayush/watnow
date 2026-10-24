@@ -1032,6 +1032,20 @@ function openManualForm(id = null) {
     if (e.key === "Escape") {
       e.preventDefault();
       close();
+      return;
+    }
+    // A dialog: Tab goes round its own fields, never out to the list behind it.
+    if (e.key !== "Tab") return;
+    const focusable = [...form.querySelectorAll('button:not([disabled]), input, select, [tabindex="0"]')].filter((el) => !el.closest("[hidden]") && el.offsetParent !== null);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
     }
   });
   form.addEventListener("submit", async (e) => {
